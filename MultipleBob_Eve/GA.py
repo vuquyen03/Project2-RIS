@@ -74,123 +74,70 @@ def secrecy_rate_objective_function(theta, w):
         secrecy_rate.append(max(min(R_bk),0))
     # print("Sum Rate:", sum(secrecy_rate))
     # print("Secrecy Rate:", secrecy_rate)
-    return sum(secrecy_rate)
+    return sum(secrecy_rate) 
 
-class Particle:
+class Individual:
     def __init__(self):
         self.theta = theta_init.copy()
-        self.w = w_init.copy()
-        self.pbest_theta = self.theta.copy()
-        self.pbest_w = self.w.copy()
-        self.pbest_value = secrecy_rate_objective_function(self.theta, self.w)
-        self.velocity_theta = generate_random_theta()
-        self.velocity_w = generate_random_beamforming_vectors()
+        self.w = w_init.copy() 
+        
+def evaluate_population(population):
+    fitness = []
+    for individual in population:
+        theta, w = individual.theta, individual.w
+        fitness.append(secrecy_rate_objective_function(theta, w))
+    # print("Fitness:", fitness)
+    return fitness
 
-    def update_velocity_theta(self, gbest_theta, inertia =0.5, c1=1.5, c2=2.0, user_k=0):
-        r1, r2 = np.random.rand(), np.random.rand()
-        cognitive_velocity_theta = c1 * r1 * (self.pbest_theta[user_k] - self.theta[user_k])
-        social_velocity_theta = c2 * r2 * (gbest_theta[user_k] - self.theta[user_k])
-        self.velocity_theta[user_k] = inertia * self.velocity_theta[user_k] + cognitive_velocity_theta + social_velocity_theta
+def select_parents(population, fitness):
+    combined = list(zip(fitness, population))
+    sorted_combined = sorted(combined, key=lambda x: x[0], reverse=True)
+    sorted_population = [x[1] for x in sorted_combined]
+    return sorted_population[:2]
 
-    def update_velocity_w(self, gbest_w, inertia = 0.5, c1=1.5, c2=2.0, user_k=0):
-        r1, r2 = np.random.rand(), np.random.rand()
-        cognitive_velocity_w = c1 * r1 * (self.pbest_w[user_k] - self.w[user_k])
-        social_velocity_w = c2 * r2 * (gbest_w[user_k] - self.w[user_k])
-        self.velocity_w[user_k] = inertia * self.velocity_w[user_k] + cognitive_velocity_w + social_velocity_w
-    
-    def update_position_theta(self, user_k=0):
-        self.theta[user_k] += self.velocity_theta[user_k]
-        self.theta[user_k] = np.exp(1j * np.angle(self.theta[user_k]))
-    
-    def update_position_w(self):
-        self.w += self.velocity_w
-        self.w = self.w / np.linalg.norm(self.w, axis=1, keepdims=True)
-    
-def PSO_optimize_theta(w, max_iter=100):
-    particles = [Particle() for _ in range(number_of_users)]
-    gbest_theta = particles[0].theta.copy()
-    gbest_value = particles[0].pbest_value.copy()
-    
-    w_max = 0.9
-    w_min = 0.4
-    
-    for iteration in range(max_iter):
-        inertia = w_min + (w_max - w_min) * np.random.rand()
+def crossover(parent1, parent2):
+    theta1, w1 = parent1.theta, parent1.w
+    theta2, w2 = parent2.theta, parent2.w
+    child_theta = (theta1 + theta2) / 2
+    child_w = (w1 + w2) / 2
+    new_individual = Individual()
+    new_individual.theta = child_theta
+    new_individual.w = child_w
+    return new_individual
 
-        for k in range(number_of_users):
-            particles[k].update_velocity_theta(gbest_theta, inertia, user_k=k)
-            particles[k].update_position_theta(user_k=k)
-                        
-            fitness_value = secrecy_rate_objective_function(particles[k].theta, w)
-            
-            if fitness_value > particles[k].pbest_value:
-                particles[k].pbest_value = fitness_value
-                particles[k].pbest_theta = particles[k].theta.copy()
-            
-            if fitness_value > gbest_value:
-                gbest_value = fitness_value
-                gbest_theta = particles[k].theta.copy()
-        # print(f"Iteration {iteration+1}/{max_iter}, Global Best Value: {gbest_value}\n")
-    return gbest_theta
-
-def PSO_optimize_w(theta, max_iter=100):
-    particles = [Particle() for _ in range(number_of_users)]
-    gbest_w = particles[0].w.copy()
-    gbest_value = particles[0].pbest_value.copy()
+def mutate(individual):
+    if np.random.rand() < mutation_rate:
+        mutation_index = np.random.randint(len(individual.theta))
+        individual.theta[mutation_index] = generate_random_theta()[mutation_index]
+    if np.random.rand() < mutation_rate:
+        mutation_index = np.random.randint(len(individual.w))
+        individual.w[mutation_index] = generate_random_beamforming_vectors()[mutation_index]
+    return individual
+        
+def genetic_algorithm():
+    population = [Individual() for _ in range(population_size)]
+    best_individual = None
+    best_fitness = -np.inf
     
-    w_max = 0.9
-    w_min = 0.4
-    
-    for iteration in range(max_iter):
-        inertia = w_min + (w_max - w_min) * np.random.rand()
+    for generation in range(num_generations):
+        fitness = evaluate_population(population)
+        current_best_fitness = max(fitness)
+        if current_best_fitness > best_fitness:
+            best_fitness = current_best_fitness
+            best_individual = population[np.argmax(fitness)]
+        
+        parents = select_parents(population, fitness)
+        new_population = []
+        for _ in range(population_size):
+            parent1, parent2 = parents
+            child = crossover(parent1, parent2)
+            child = mutate(child)
+            new_population.append(child)
+        
+        population = new_population
+        print(f"Generation {generation + 1}/{num_generations}, Best Fitness: {best_fitness}")
 
-        for k in range(number_of_users):
-            particles[k].update_velocity_w(gbest_w, inertia, user_k=k)
-            particles[k].update_position_w()
-            
-            fitness_value = secrecy_rate_objective_function(theta, particles[k].w)
-            
-            if fitness_value > particles[k].pbest_value:
-                particles[k].pbest_value = fitness_value
-                particles[k].pbest_w = particles[k].w.copy()
-            
-            if fitness_value > gbest_value:
-                gbest_value = fitness_value
-                gbest_w = particles[k].w.copy()
-        # print(f"Iteration {iteration+1}/{max_iter}, Global Best Value: {gbest_value}\n")
-    return gbest_w
-
-def PSO_optimize_w_theta(max_iter=100):
-    particles = [Particle() for _ in range(number_of_users)]
-    gbest_theta = particles[0].theta.copy()
-    gbest_w = particles[0].w.copy()
-    gbest_value = particles[0].pbest_value.copy()
-    
-    w_max = 0.9
-    w_min = 0.4
-    
-    for iteration in range(max_iter):
-        inertia = w_min + (w_max - w_min) * np.random.rand()
-
-        for k in range(number_of_users):
-            particles[k].update_velocity_theta(gbest_theta, inertia, user_k=k)
-            particles[k].update_position_theta(user_k=k)
-            particles[k].update_velocity_w(gbest_w, inertia, user_k=k)
-            particles[k].update_position_w()
-            
-            fitness_value = secrecy_rate_objective_function(particles[k].theta, particles[k].w)
-            
-            if fitness_value > particles[k].pbest_value:
-                particles[k].pbest_value = fitness_value
-                particles[k].pbest_theta = particles[k].theta.copy()
-                particles[k].pbest_w = particles[k].w.copy()
-            
-            if fitness_value > gbest_value:
-                gbest_value = fitness_value
-                gbest_theta = particles[k].theta.copy()
-                gbest_w = particles[k].w.copy()
-        # print(f"Iteration {iteration+1}/{max_iter}, Global Best Value: {gbest_value}\n")
-    return gbest_theta, gbest_w
+    return best_individual
 
 if __name__ == "__main__":
     
@@ -214,10 +161,7 @@ if __name__ == "__main__":
     dAE = [np.sqrt(dAEh[i]**2 + dv**2) for i in range(number_of_eavesdroppers)]         # Distance between Alice and the eavesdroppers
     dIB = [np.sqrt((dABh[i]-dAI)**2 + dv**2) for i in range(number_of_users)]           # Distance between the legitimate receivers and the RIS
     dIE = [np.sqrt((dAEh[i]-dAI)**2 + dv**2) for i in range(number_of_eavesdroppers)]   # Distance between the eavesdroppers and the RIS
-
-    total_iter = 100
-    num_cycles = 1000
-
+    
     # Channel generation
     Hai, hib, hie, hab, hae = generateChannel()
 
@@ -225,33 +169,15 @@ if __name__ == "__main__":
     theta_init = generate_random_theta()
     w_init = generate_random_beamforming_vectors()
     
-    print("distance between Alice and the receivers: ", dAB)
-    print("distance between Alice and the eavesdroppers: ", dAE)
     print("Secret Rate:", secrecy_rate_objective_function(theta_init, w_init))
+    
+    # Genetic Algorithm parameters
+    population_size = 30
+    num_generations = 1000
+    mutation_rate = 0.1
 
-    # # PSO optimization
-    # # particles = [Particle() for _ in range(number_of_users)]
-    # for cycle in range(num_cycles):
-    #     theta_opt = PSO_optimize_theta(w_init, max_iter=total_iter)
-    #     theta_init = theta_opt
-    #     w_opt = PSO_optimize_w(theta_opt, max_iter=total_iter)
-    #     w_init = w_opt
-    #     print(f"Cycle {cycle+1}/{num_cycles}, Secret Rate: {secrecy_rate_objective_function(theta_opt, w_opt)}")
+    # Run the genetic algorithm
+    best_individual = genetic_algorithm()
+    print("Best Individual:", best_individual.theta, best_individual.w)
+    print("Best Fitness:", secrecy_rate_objective_function(best_individual.theta, best_individual.w))
 
-    
-    # PSO optimization
-    for cycle in range(num_cycles):
-        theta_opt, w_opt = PSO_optimize_w_theta(max_iter=total_iter)
-        theta_init = theta_opt
-        w_init = w_opt
-        print(f"Cycle {cycle+1}/{num_cycles}, Secret Rate: {secrecy_rate_objective_function(theta_opt, w_opt)}")
-
-        
-    print("Optimized theta:", theta_opt)
-    print("Optimized w:", w_opt)
-    
-    # Calculate and print the optimal secrecy rate
-    optimal_secrecy_rate = secrecy_rate_objective_function(theta_opt, w_opt)
-    print("Optimal Secrecy Rate:", optimal_secrecy_rate)
-    
-    

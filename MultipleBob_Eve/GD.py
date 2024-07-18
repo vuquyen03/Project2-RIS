@@ -46,7 +46,7 @@ def generate_random_theta(number_of_users, Nris):
     theta = realPart + 1j * imagPart
     theta = np.exp(1j * np.angle(theta))  # Chuẩn hóa theta về vòng tròn đơn vị
     return theta
-    
+
 def generateChannel():
     normFact = 1/np.sqrt(sigma)
     Hai = chanGen(zetaAI, dAI, Nris, N)                                                         # Alice to RIS channel
@@ -82,7 +82,7 @@ def secrecy_rate_objective_function(theta, w):
     # print(secrecy_rate)
     return sum(secrecy_rate)
 
-def compute_gradient(theta, w):
+def compute_gradient_w(theta, w):
     grad_w = np.zeros_like(w, dtype=complex)
     
     for k in range (number_of_users):
@@ -132,30 +132,12 @@ def compute_gradient(theta, w):
     return grad_w
 
 def gradient_descent_update_w(theta, w, learning_rate):
-    grad_w = compute_gradient(theta, w)
+    grad_w = compute_gradient_w(theta, w)
     w_new = w - learning_rate * grad_w
     
     # Normalize the vectors
     w_new = w_new / np.linalg.norm(w_new, axis=1, keepdims=True)
     return w_new
-
-# def gradient_descent_w(theta, initial_w, learning_rate=0.005, total_iter=100):
-#     best_w = initial_w.copy()
-#     best_value = secrecy_rate_objective_function(theta, best_w)
-    
-#     current_w = initial_w.copy()
-    
-#     for iteration in range(total_iter):
-#         current_w = gradient_descent_update_w(theta, current_w, learning_rate)
-#         current_value = secrecy_rate_objective_function(theta, current_w)
-        
-#         print("Current Value:", current_value, "Best Value:", best_value)
-        
-#         if (current_value > best_value):
-#             best_w = current_w
-#             best_value = current_value
-        
-#     return best_w
 
 def gradient_descent_w(theta, initial_w, learning_rate=0.005, total_iter=100, epsilon=1e-3):
     """Main Gradient Descent Algorithm
@@ -198,66 +180,70 @@ def gradient_descent_w(theta, initial_w, learning_rate=0.005, total_iter=100, ep
         
     return best_w
 
-class Particle:
-    def __init__(self):
-        self.theta = theta_init.copy()
-        self.w = w_init.copy()
-        self.pbest_theta = self.theta.copy()
-        self.pbest_value = secrecy_rate_objective_function(self.theta, self.w)
-        self.velocity_theta = generate_random_theta(number_of_users, Nris)
-   
-    def update_velocity(self, gbest_theta, w=0.5, c1=1.5, c2=2.0, user_k=0):
-        """Update the velocity of the particle
+def compute_gradient_theta(theta, w, epsilon=1e-3):
+    grad_theta = np.zeros_like(theta, dtype=complex)
+    for k in range(number_of_users):
+        for i in range(Nris):
+            theta_plus = theta.copy()
+            theta_plus[k][i] += epsilon*1j
+            theta_minus = theta.copy()
+            theta_minus[k][i] -= epsilon*1j
+            grad_theta[k][i] = (secrecy_rate_objective_function(theta_plus, w) - secrecy_rate_objective_function(theta_minus, w))/(2*epsilon)
+            
+    return grad_theta
 
-        Args:
-            gbest_theta : the global best theta
-            w: inertia weight. Defaults to 0.5.
-            c1: cognitive parameter. Defaults to 1.0.
-            c2: social parameter. Defaults to 1.0.
-            user_k: the index of the user. Defaults to 0.
-        """
-        
-        r1, r2 = np.random.rand(), np.random.rand()
-        cognitive_velocity_theta = c1 * r1 * (self.pbest_theta[user_k] - self.theta[user_k])
-        social_velocity_theta = c2 * r2 * (gbest_theta[user_k] - self.theta[user_k])
-        self.velocity_theta[user_k] = w * self.velocity_theta[user_k] + cognitive_velocity_theta + social_velocity_theta
-   
-    def update_position(self, user_k=0):
-        self.theta[user_k] += self.velocity_theta[user_k]
-        self.theta[user_k] = np.exp(1j * np.angle(self.theta[user_k]))  # normalize theta to unit circle
+def gradient_descent_update_theta(theta, w, learning_rate):
+    grad_theta = compute_gradient_theta(theta, w)
+    theta_new = theta - learning_rate * grad_theta
+    
+    # Normalize the vectors
+    theta_new = np.exp(1j * np.angle(theta_new))  # Chuẩn hóa theta về vòng tròn đơn vị
+    return theta_new
 
-def PSO_GD():
-    particles = [Particle() for _ in range (number_of_users)]
-    gbest_theta = particles[0].theta.copy()
-    gbest_value = particles[0].pbest_value.copy()
-    print("Initial Global Best Value: ", gbest_value)
+def gradient_descent_theta(initial_theta, w, learning_rate=0.005, total_iter=100, epsilon=1e-3):
+    """Main Gradient Descent Algorithm
+
+    Args:
+        initial_theta: initial phase shift matrix
+        w: beamforming vectors
+        learning_rate: learning rate of the gradient descent algorithm. Defaults to 0.005.
+        total_iter: total number of iterations. Defaults to 100.
+        epsilon: the stopping criterion. Defaults to 1e-3.
+
+    Returns:
+        np.array: the optimized phase shift matrix
+    """
+    
+    best_theta = initial_theta.copy()
+    best_value = -secrecy_rate_objective_function(best_theta, w)
+    
+    current_theta = initial_theta.copy()
+    previous_value = best_value
     
     for iteration in range(total_iter):
-        for k in range(number_of_users):
-            particles[k].update_velocity(gbest_theta, user_k=k)
-            particles[k].update_position(user_k=k)
+        current_theta = gradient_descent_update_theta(current_theta, w, learning_rate)
+        current_value = -secrecy_rate_objective_function(current_theta, w)
+        
+        # print("Current Value:", current_value, "Previous Value:", previous_value)
+        
+        # Check for convergence
+        if abs(current_value - previous_value) < epsilon:
+            print("Stopped at iteration", iteration+1)
+            print(epsilon, current_value[0] - previous_value[0])
+            break
+        
+        if (current_value < best_value):
+            best_theta = current_theta
+            best_value = current_value
             
-            fitness_value = secrecy_rate_objective_function(particles[k].theta, particles[k].w)
-            
-            if fitness_value > particles[k].pbest_value:
-                particles[k].pbest_theta = particles[k].theta.copy()
-                particles[k].pbest_value = fitness_value
-            
-            if fitness_value > gbest_value:
-                gbest_theta = particles[k].theta.copy()
-                gbest_value = fitness_value
-            
-        # print(f"Iteration {iteration+1}/{total_iter}, Global Best Value: {gbest_value}\n")
-    
-    print("Global Best Value Before Gradient Descent: ", secrecy_rate_objective_function(gbest_theta, w_init))
-    
-    gbest_w = gradient_descent_w(gbest_theta, w_init, learning_rate=0.001, total_iter=500)
-    print("Global Best Value: ", secrecy_rate_objective_function(gbest_theta, gbest_w))
-    
-    return gbest_theta, gbest_w
+        # Update the previous value
+        previous_value = current_value
+        
+    return best_theta
+
 
 if __name__ == "__main__":
-
+    
     # System parameters
     sigma = db2pow(-75)                                                                 # noise power
     N = 4                                                                               # number of transmit antennas
@@ -285,29 +271,27 @@ if __name__ == "__main__":
     # Generate random initial values for theta and w
     theta_init = generate_random_theta(number_of_users, Nris)
     w_init = generate_random_beamforming_vectors()
-
+    
     print("distance between Alice and the receivers: ", dAB)
     print("distance between Alice and the eavesdroppers: ", dAE)
     
-    print("Secrecy rate with initial value: ", secrecy_rate_objective_function(theta_init, w_init))
-
-    # PSO parameters
-    total_iter = 100
+    current_secrecy_rate = secrecy_rate_objective_function(theta_init, w_init)
+    print("Secrecy rate with initial value: ", current_secrecy_rate)
+    
+    # Gradient Descent Algorithm
     num_cycles = 100
     for i in range(num_cycles):
-        theta_opt, w_opt = PSO_GD()
-        theta_init, w_init = theta_opt, w_opt
-        print("Cycle:", i+1, "Objective Function Value:", secrecy_rate_objective_function(theta_opt, w_opt))
+        w_opt = gradient_descent_w(theta_init, w_init, learning_rate=0.001, total_iter=50, epsilon=1e-3)
+        theta_opt = gradient_descent_theta(theta_init, w_opt, learning_rate=0.001, total_iter=50, epsilon=1e-3)
+        theta_init = theta_opt
+        w_init = w_opt
         
-    print("Optimized theta:", theta_opt)
-    print("Optimized w:", w_opt)
-
-    # Calculate and print the optimal secrecy rate
-    optimal_secrecy_rate = secrecy_rate_objective_function(theta_opt, w_opt)
-    print("Optimal Secrecy Rate:", optimal_secrecy_rate)
-
-
-    # zb = np.dot(np.dot(hib, np.diag(theta_opt[0])),Hai) + hab
-    # ze = np.dot(np.dot(hie, np.diag(theta_opt[0])),Hai) + hae
-
-    # print(np.log2(1 + np.abs(np.dot(zb,w_opt.T))**2) - np.log2(1 + np.abs(np.dot(ze,w_opt.T))**2))
+        new_secrecy_rate = secrecy_rate_objective_function(theta_opt, w_opt)
+        print("Secrecy rate after cycle", i+1, ":", new_secrecy_rate)
+        
+        if (new_secrecy_rate - current_secrecy_rate) < 1e-3:
+            print("Converged")
+            break
+        
+        current_secrecy_rate = new_secrecy_rate
+        
