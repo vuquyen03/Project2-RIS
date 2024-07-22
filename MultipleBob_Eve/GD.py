@@ -91,7 +91,7 @@ def compute_gradient_w(theta, w):
         denGamma_bk = 1 + np.sum([np.abs(np.dot(Z_k, w[i]))**2 for i in range(number_of_users) if i != k])
         gamma_bk = numGamma_bk/denGamma_bk
         
-        grad_gamma_bk = 2 * HermTranspose(Z_k) @ (Z_k @ w[k]) / denGamma_bk 
+        grad_gamma_bk = (HermTranspose(Z_k) @ Z_k @ w[k] + HermTranspose(HermTranspose(Z_k) @ Z_k @ w[k])) / denGamma_bk 
         grad_Cbk = (grad_gamma_bk / np.log(2)) / (1 + gamma_bk)
         
         gamma_e = []
@@ -108,7 +108,7 @@ def compute_gradient_w(theta, w):
         denGamma_e_max = 1 + np.sum([np.abs(np.dot(Z_e_max, w[l]))**2 for l in range(number_of_users) if l != k])
         gamma_e_max = numGamma_e_max/denGamma_e_max
         
-        grad_gamma_e_max = 2 * HermTranspose(Z_e_max) @ (Z_e_max @ w[k]) / denGamma_e_max
+        grad_gamma_e_max = (HermTranspose(Z_e_max) @ Z_e_max @ w[k] + HermTranspose(HermTranspose(Z_e_max) @ Z_e_max @ w[k])) / denGamma_e_max
         grad_Ce_max = (grad_gamma_e_max / np.log(2)) / (1 + gamma_e_max)
         
         grad_w[k] += -(grad_Cbk - grad_Ce_max)
@@ -116,15 +116,15 @@ def compute_gradient_w(theta, w):
             
         for j in range (number_of_users):
             if (j != k):
-                numGamma_wj_Cbk = -2 * numGamma_bk * HermTranspose(Z_k) @ (Z_k @ w[j])
-                denGamma_wj_Cbk = denGamma_bk**2
+                numGamma_wj_Cbk = -numGamma_bk * (HermTranspose(Z_k) @ Z_k @ w[j] + HermTranspose(HermTranspose(Z_k) @ Z_k @ w[j]))
+                denGamma_wj_Cbk = np.log(2) * (1 + gamma_bk) * denGamma_bk**2
                 grad_wj_Cbk = numGamma_wj_Cbk / denGamma_wj_Cbk
                 
                 Z_em = hie[index_eve_max] @ np.diag(theta[k]) @ Hai + hae[index_eve_max]
                 numGamma_em = np.abs(np.dot(Z_em, w[k]))**2
                 denGamma_em = 1 + np.sum([np.abs(np.dot(Z_em, w[l]))**2 for l in range(number_of_users) if l != k])
-                numGamma_wj_em = -2 * numGamma_em * HermTranspose(Z_em) @ (Z_em @ w[j])
-                denGamma_wj_em = denGamma_em**2
+                numGamma_wj_em = -numGamma_em * (HermTranspose(Z_em) @ Z_em @ w[j] + HermTranspose(HermTranspose(Z_em) @ Z_em @ w[j]))
+                denGamma_wj_em = np.log(2) * denGamma_em**2 * (1 + gamma_e_max)
                 
                 grad_wj_em = numGamma_wj_em / denGamma_wj_em
                 grad_w[j] += -(grad_wj_Cbk - grad_wj_em)
@@ -170,7 +170,7 @@ def gradient_descent_w(theta, initial_w, learning_rate=0.005, total_iter=100, ep
             print("Stopped at iteration", iteration+1)
             print(epsilon, current_value[0] - previous_value[0])
             break
-        
+                
         if (current_value < best_value):
             best_w = current_w
             best_value = current_value
@@ -248,7 +248,7 @@ if __name__ == "__main__":
     sigma = db2pow(-75)                                                                 # noise power
     N = 4                                                                               # number of transmit antennas
     Nris = 32                                                                           # number of RIS elements
-    number_of_users = 2                                                                 # number of users
+    number_of_users = 4                                                                 # number of users
     number_of_eavesdroppers = 2                                                         # number of eavesdroppers
     zetaAI = 2.2                                                                        # Path loss exponent of the channel between the Alice and the RIS
     zetaIB = 2.5                                                                        # Path loss exponent of the channel between the legitimate receivers and the RIS
@@ -281,8 +281,8 @@ if __name__ == "__main__":
     # Gradient Descent Algorithm
     num_cycles = 100
     for i in range(num_cycles):
-        w_opt = gradient_descent_w(theta_init, w_init, learning_rate=0.001, total_iter=50, epsilon=1e-3)
-        theta_opt = gradient_descent_theta(theta_init, w_opt, learning_rate=0.001, total_iter=50, epsilon=1e-3)
+        w_opt = gradient_descent_w(theta_init, w_init, learning_rate=0.01, total_iter=50, epsilon=1e-3)
+        theta_opt = gradient_descent_theta(theta_init, w_opt, learning_rate=0.01, total_iter=50, epsilon=1e-3)
         theta_init = theta_opt
         w_init = w_opt
         
